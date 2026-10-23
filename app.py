@@ -1,7 +1,5 @@
-
-import re
 import streamlit as st
-from collections import Counter
+from openai import OpenAI
 
 st.set_page_config(
     page_title="StudySpark AI",
@@ -10,51 +8,58 @@ st.set_page_config(
 )
 
 st.title("📚 StudySpark AI")
-st.write("Turn your study notes into revision material.")
+st.write("Your AI-powered study companion.")
 
 notes = st.text_area(
-    "Paste your study notes here",
+    "Paste your study notes",
+    max_chars=6000,
     height=220,
     placeholder="Paste your chapter notes here..."
 )
 
-def make_summary(text, limit=5):
-    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
-    sentences = [s.strip() for s in sentences if s.strip()]
+task = st.selectbox(
+    "Choose what to generate",
+    [
+        "Summary",
+        "Quiz questions with answers",
+        "Flashcards",
+        "Complete revision pack"
+    ]
+)
 
-    if len(sentences) <= limit:
-        return sentences
-
-    words = re.findall(r"\b[a-zA-Z]{3,}\b", text.lower())
-    frequency = Counter(words)
-    scored = []
-
-    for index, sentence in enumerate(sentences):
-        terms = re.findall(r"\b[a-zA-Z]{3,}\b", sentence.lower())
-        score = sum(frequency[word] for word in terms)
-        scored.append((score, index, sentence))
-
-    selected = sorted(scored, reverse=True)[:limit]
-    selected.sort(key=lambda item: item[1])
-    return [item[2] for item in selected]
-
-if st.button("✨ Generate revision pack"):
+if st.button("✨ Generate with AI", type="primary"):
     if len(notes.split()) < 10:
-        st.warning("Please enter at least 10 words.")
+        st.warning("Please enter at least 10 words of notes.")
     else:
-        summary = make_summary(notes)
+        try:
+            api_key = st.secrets["OPENAI_API_KEY"]
+            client = OpenAI(api_key=api_key)
 
-        st.subheader("📝 Summary")
-        for sentence in summary:
-            st.write("• " + sentence)
+            prompts = {
+                "Summary": "Summarize these notes in simple language.",
+                "Quiz questions with answers": "Create five quiz questions with answers and brief explanations.",
+                "Flashcards": "Create ten question-and-answer flashcards.",
+                "Complete revision pack": "Create a summary, five quiz questions with answers, and five flashcards."
+            }
 
-        st.subheader("❓ Practice questions")
-        for i, sentence in enumerate(summary, 1):
-            st.write(f"{i}. What is the main idea of this statement?")
-            with st.expander("View study note"):
-                st.write(sentence)
+            with st.spinner("Creating your study material..."):
+                response = client.responses.create(
+                    model="gpt-5.5",
+                    instructions=(
+                        "You are StudySpark, a careful study assistant. "
+                        "Use the student's notes as your source. "
+                        "Do not invent facts. Use clear headings."
+                    ),
+                    input=prompts[task] + "\n\nSTUDENT NOTES:\n" + notes,
+                    max_output_tokens=1200
+                )
 
-        st.info(
-            "Prototype version: this app uses basic text processing, "
-            "not a real AI model yet. Check the output against your notes."
-        )
+            st.subheader("Your revision material")
+            st.markdown(response.output_text)
+            st.caption("Check important facts against your textbook.")
+
+        except Exception:
+            st.error(
+                "AI setup failed. Check your API key, model access, "
+                "and API billing settings."
+            )
